@@ -23,6 +23,9 @@ const app = express();
 
 // Middleware
 app.use(express.json());
+app.get('/api/health', (_req, res) => {
+  res.status(200).json({ status: 'ok' });
+});
 // Support multiple origins via comma-separated CORS_ORIGIN env variable
 const rawCors = process.env.CORS_ORIGIN || "http://localhost:5173";
 const allowedOrigins = rawCors === '*'
