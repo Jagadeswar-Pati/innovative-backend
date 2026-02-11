@@ -34,6 +34,7 @@ export const createReview = async (req, res, next) => {
       }
     }
 
+    const initialStatus = settings.autoApprove ? 'approved' : 'pending';
     const review = await Review.create({
       productId,
       userId: req.user._id,
@@ -41,6 +42,7 @@ export const createReview = async (req, res, next) => {
       rating,
       comment: comment || '',
       userName: req.user.name,
+      status: initialStatus,
     });
 
     await Rating.create({
@@ -67,7 +69,10 @@ export const createReview = async (req, res, next) => {
 export const getReviewMode = async (_req, res, next) => {
   try {
     const settings = await getReviewSettings();
-    res.status(200).json({ success: true, data: { mode: settings.mode } });
+    res.status(200).json({
+      success: true,
+      data: { mode: settings.mode, autoApprove: !!settings.autoApprove },
+    });
   } catch (error) {
     next(error);
   }
@@ -75,14 +80,22 @@ export const getReviewMode = async (_req, res, next) => {
 
 export const updateReviewMode = async (req, res, next) => {
   try {
-    const { mode } = req.body;
-    if (!['any-user', 'delivered-only'].includes(mode)) {
-      return res.status(400).json({ success: false, message: 'Invalid review mode' });
-    }
+    const { mode, autoApprove } = req.body;
     const settings = await getReviewSettings();
-    settings.mode = mode;
+    if (mode !== undefined) {
+      if (!['any-user', 'delivered-only'].includes(mode)) {
+        return res.status(400).json({ success: false, message: 'Invalid review mode' });
+      }
+      settings.mode = mode;
+    }
+    if (typeof autoApprove === 'boolean') {
+      settings.autoApprove = autoApprove;
+    }
     await settings.save();
-    res.status(200).json({ success: true, data: { mode: settings.mode } });
+    res.status(200).json({
+      success: true,
+      data: { mode: settings.mode, autoApprove: !!settings.autoApprove },
+    });
   } catch (error) {
     next(error);
   }

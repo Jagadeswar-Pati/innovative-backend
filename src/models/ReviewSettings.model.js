@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 const reviewSettingsSchema = new mongoose.Schema(
   {
     mode: { type: String, enum: ['any-user', 'delivered-only'], default: 'delivered-only' },
+    autoApprove: { type: Boolean, default: false },
   },
   { timestamps: true }
 );
