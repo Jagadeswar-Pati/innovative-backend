@@ -133,6 +133,25 @@ export const sendOrderSuccessEmail = async ({ email, name, order, invoiceUrl, in
   await sendEmailWithFallback({ toEmail: email, toName: name, subject, html, attachments });
 };
 
+export const sendOrderDeliveredEmail = async ({ email, name, order }) => {
+  const subject = `Order Delivered - ${order?._id}`;
+  const baseUrl = process.env.FRONTEND_URL || process.env.LOGIN_URL || 'http://localhost:5177';
+  const orderPageUrl = `${baseUrl.replace(/\/$/, '')}/order/${order?._id}`;
+  const html = `
+    <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #111;">
+      <p>Hi ${name || 'Customer'},</p>
+      <p><strong>Your order has been successfully delivered.</strong></p>
+      <p>Order ID: <strong>${order?._id}</strong></p>
+      <p>Total: <strong>₹${Number(order?.totalAmount || 0).toFixed(2)}</strong></p>
+      <p>Thank you for shopping with us. We hope you are satisfied with your purchase.</p>
+      <p>You can view your order details here: <a href="${orderPageUrl}">View order</a>.</p>
+      <p>— Innovative Hub Team</p>
+    </div>
+  `;
+
+  await sendEmailWithFallback({ toEmail: email, toName: name, subject, html });
+};
+
 export const sendOrderFailedEmail = async ({ email, name, reason }) => {
   const subject = 'Payment Failed - Innovative Hub';
   const html = `

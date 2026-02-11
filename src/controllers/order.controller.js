@@ -4,6 +4,7 @@ import User from '../models/User.model.js';
 import Order from '../models/Order.model.js';
 import { createNotification } from '../utils/notificationHelpers.js';
 import { generateInvoice, generateInvoiceBuffer } from '../utils/invoice.js';
+import { sendOrderDeliveredEmail } from '../utils/mailer.js';
 
 export const createOrder = async (req, res, next) => {
 	try {
@@ -113,13 +114,23 @@ export const updateOrderStatus = async (req, res, next) => {
 					totalAmountSpent: Number(order.totalAmount || 0),
 				},
 			});
-			void createNotification({
+			createNotification({
 				type: 'order',
 				title: 'Order Delivered',
 				message: `Order ${order._id} marked as delivered.`,
 				entityType: 'Order',
 				entityId: order._id,
-			});
+			}).catch(() => {});
+			// Send "order delivered" email to customer
+			User.findById(order.customerId).select('email name').lean().then((user) => {
+				if (user?.email) {
+					sendOrderDeliveredEmail({
+						email: user.email,
+						name: user.name || order.customerName || 'Customer',
+						order: { _id: order._id, totalAmount: order.totalAmount },
+					}).catch((err) => console.error('Delivered email failed:', err?.message || err));
+				}
+			}).catch(() => {});
 		} else if (previousStatus === 'delivered' && nextStatus !== 'delivered') {
 			await User.findByIdAndUpdate(order.customerId, {
 				$inc: {
