@@ -6,6 +6,7 @@ const reviewSchema = new mongoose.Schema(
 		productName: { type: String },
 		userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
 		userName: { type: String },
+		orderId: { type: mongoose.Schema.Types.ObjectId, ref: 'Order' },
 		rating: { type: Number, required: true },
 		comment: { type: String },
 		status: { type: String, enum: ['approved', 'pending', 'rejected'], default: 'pending' },

@@ -24,6 +24,10 @@ const addressSchema = new mongoose.Schema({
 const invoiceSchema = new mongoose.Schema({
 	invoiceNumber: { type: String },
 	invoiceUrl: { type: String },
+	/** Cloudinary public_id for 7-day cleanup */
+	publicId: { type: String },
+	/** When invoice was generated/uploaded (for cleanup) */
+	invoiceGeneratedAt: { type: Date },
 	sentOnEmail: { type: Boolean, default: false },
 	sentOnWhatsapp: { type: Boolean, default: false },
 });
@@ -47,16 +51,29 @@ const orderSchema = new mongoose.Schema(
 		paymentMethod: { type: String },
 		paymentStatus: { type: String, enum: ['paid', 'unpaid', 'failed'], default: 'unpaid' },
 		orderStatus: { type: String, enum: ['pending', 'processing', 'shipped', 'delivered', 'cancelled', 'confirmed'], default: 'pending' },
+		isCompleted: { type: Boolean, default: false },
+		completedAt: { type: Date },
 		delivery: {
 			partnerName: { type: String },
 			trackingId: { type: String },
 			trackingLink: { type: String }
 		},
 		addressSnapshot: addressSchema,
-		invoice: invoiceSchema
+		invoice: invoiceSchema,
+		// Delivery system fields
+		delivery_method: { type: String, enum: ['default', 'manual'], default: 'default' },
+		delivery_charge: { type: Number, default: 0 },
+		delivery_agreement: { type: Boolean, default: false },
+		delivery_mobile_number: { type: String },
+		delivery_status: { type: String, enum: ['pending', 'processing', 'shipped', 'delivered'], default: 'pending' },
+		delivery_platform: { type: String, default: '' },
+		state: { type: String },
 	},
 	{ timestamps: true }
 );
+
+orderSchema.index({ createdAt: -1 });
+orderSchema.index({ orderStatus: 1, createdAt: -1 });
 
 const Order = mongoose.model('Order', orderSchema);
 

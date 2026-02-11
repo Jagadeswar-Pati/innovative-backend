@@ -35,7 +35,7 @@ const getSenderDetails = () => {
   return { rawFrom: rawFrom.trim(), email: rawFrom.trim() };
 };
 
-const sendEmailWithFallback = async ({ toEmail, toName, subject, html }) => {
+const sendEmailWithFallback = async ({ toEmail, toName, subject, html, attachments = [], replyTo }) => {
   const sender = getSenderDetails();
   if (!sender) {
     console.warn('SMTP sender not configured; skipping email');
@@ -52,6 +52,7 @@ const sendEmailWithFallback = async ({ toEmail, toName, subject, html }) => {
         to: { email: toEmail, name: toName },
         subject,
         html,
+        replyTo,
       });
     } catch (err) {
       console.error('Failed to send email via Brevo:', err?.message || err);
@@ -61,7 +62,7 @@ const sendEmailWithFallback = async ({ toEmail, toName, subject, html }) => {
 
   if (transporter) {
     try {
-      await transporter.sendMail({ from: sender.rawFrom, to: toEmail, subject, html });
+      await transporter.sendMail({ from: sender.rawFrom, to: toEmail, subject, html, attachments, replyTo });
       return;
     } catch (err) {
       console.warn('SMTP failed; retrying via Brevo:', err?.message || err);
@@ -76,6 +77,7 @@ const sendEmailWithFallback = async ({ toEmail, toName, subject, html }) => {
       to: { email: toEmail, name: toName },
       subject,
       html,
+      replyTo,
     });
   } catch (err) {
     console.error('Failed to send email via Brevo:', err?.message || err);
@@ -108,21 +110,27 @@ export const sendWelcomeEmail = async ({ email, name }) => {
   await sendEmailWithFallback({ toEmail: email, toName: name, subject, html });
 };
 
-export const sendOrderSuccessEmail = async ({ email, name, order, invoiceUrl }) => {
+export const sendOrderSuccessEmail = async ({ email, name, order, invoiceUrl, invoicePdfBuffer, invoiceFilename }) => {
   const subject = `Order Confirmed - ${order?._id}`;
+  const baseUrl = process.env.FRONTEND_URL || process.env.LOGIN_URL || 'http://localhost:5177';
+  const orderPageUrl = `${baseUrl.replace(/\/$/, '')}/order/${order?._id}`;
   const html = `
     <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #111;">
       <p>Hi ${name || 'Customer'},</p>
       <p>Your order has been placed successfully.</p>
       <p>Order ID: <strong>${order?._id}</strong></p>
       <p>Total: <strong>₹${Number(order?.totalAmount || 0).toFixed(2)}</strong></p>
-      ${invoiceUrl ? `<p>Invoice: <a href="${invoiceUrl}">${invoiceUrl}</a></p>` : ''}
+      <p><strong>Invoice (PDF):</strong> You can view and download your invoice from your order page: <a href="${orderPageUrl}">View order &amp; download invoice (PDF)</a>.${invoicePdfBuffer && invoiceFilename ? ' The invoice is also attached to this email.' : ''}</p>
       <p>We will notify you as the order progresses.</p>
       <p>— Innovative Hub Team</p>
     </div>
   `;
 
-  await sendEmailWithFallback({ toEmail: email, toName: name, subject, html });
+  const attachments = [];
+  if (invoicePdfBuffer && invoiceFilename) {
+    attachments.push({ filename: invoiceFilename, content: invoicePdfBuffer });
+  }
+  await sendEmailWithFallback({ toEmail: email, toName: name, subject, html, attachments });
 };
 
 export const sendOrderFailedEmail = async ({ email, name, reason }) => {
@@ -154,4 +162,27 @@ export const sendPasswordResetEmail = async ({ email, name, resetUrl }) => {
   `;
 
   await sendEmailWithFallback({ toEmail: email, toName: name, subject, html });
+};
+
+export const sendContactEmail = async ({ toEmail, fromName, fromEmail, subject, message, attachments, attachmentList }) => {
+  const html = `
+    <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #111;">
+      <h2>New Contact Message</h2>
+      <p><strong>Name:</strong> ${fromName || 'N/A'}</p>
+      <p><strong>Email:</strong> ${fromEmail || 'N/A'}</p>
+      ${subject ? `<p><strong>Subject:</strong> ${subject}</p>` : ''}
+      <p><strong>Message:</strong></p>
+      <p>${(message || '').toString().replace(/\n/g, '<br />')}</p>
+      ${attachmentList?.length ? `<p><strong>Attachments:</strong> ${attachmentList.join(', ')}</p>` : ''}
+    </div>
+  `;
+
+  await sendEmailWithFallback({
+    toEmail,
+    toName: 'Innovative Hub',
+    subject: subject ? `Contact: ${subject}` : 'New Contact Message',
+    html,
+    attachments,
+    replyTo: fromEmail ? { email: fromEmail, name: fromName } : undefined,
+  });
 };

@@ -3,7 +3,7 @@ import https from 'node:https';
 const BREVO_API_HOST = 'api.brevo.com';
 const BREVO_API_PATH = '/v3/smtp/email';
 
-export const sendBrevoEmail = async ({ sender, to, subject, html }) => {
+export const sendBrevoEmail = async ({ sender, to, subject, html, replyTo }) => {
   const apiKey = process.env.BREVO_API_KEY;
   if (!apiKey) {
     throw new Error('Brevo API key not configured');
@@ -18,6 +18,7 @@ export const sendBrevoEmail = async ({ sender, to, subject, html }) => {
     to: [
       to?.name ? { email: to.email, name: to.name } : { email: to.email },
     ],
+    ...(replyTo?.email ? { replyTo: replyTo.name ? { email: replyTo.email, name: replyTo.name } : { email: replyTo.email } } : {}),
     subject,
     htmlContent: html,
   };

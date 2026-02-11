@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import Product from '../models/Product.model.js';
 import { uploadToCloudinary } from '../middleware/upload.middleware.js';
 import cloudinary from '../config/cloudinary.js';
+import { createNotification } from '../utils/notificationHelpers.js';
 
 // GET PRODUCT BY ID
 export const getProductById = async (req, res, next) => {
@@ -158,6 +159,15 @@ export const updateProductStock = async (req, res, next) => {
     if (stockStatus === 'out_of_stock') updates.stockQuantity = 0;
     else if (existing.stockQuantity === 0) updates.stockQuantity = 1;
     const product = await Product.findByIdAndUpdate(req.params.id, updates, { new: true });
+    if (product && stockStatus === 'out_of_stock') {
+      void createNotification({
+        type: 'system',
+        title: 'Out of Stock',
+        message: `${product.name} was marked out of stock.`,
+        entityType: 'Product',
+        entityId: product._id,
+      });
+    }
     res.status(200).json({ success: true, data: product });
   } catch (error) {
     next(error);

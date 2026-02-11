@@ -3,6 +3,7 @@ import { adminLogin } from "../controllers/admin.controller.js";
 import adminAuth from "../middleware/adminAuth.middleware.js";
 import upload, { uploadToCloudinary } from "../middleware/upload.middleware.js";
 import { createProduct, updateProduct } from "../controllers/product.controller.js";
+import { cleanupOldInvoiceUploads } from "../utils/cleanupInvoiceCloudinary.js";
 
 const router = express.Router();
 
@@ -42,6 +43,16 @@ router.post("/upload/editor-image", adminAuth, upload.single("image"), async (re
     }
     const result = await uploadToCloudinary(req.file.buffer, "innovative-hub/editor");
     res.status(200).json({ success: true, data: { url: result.secure_url, publicId: result.public_id } });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Delete invoice PDFs from Cloudinary older than 1 hour (run hourly or manually)
+router.post("/cleanup-invoices", adminAuth, async (req, res, next) => {
+  try {
+    const result = await cleanupOldInvoiceUploads();
+    res.json({ success: true, data: result });
   } catch (error) {
     next(error);
   }
