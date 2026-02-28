@@ -4,7 +4,12 @@ import User from '../models/User.model.js';
 import Order from '../models/Order.model.js';
 import { createNotification } from '../utils/notificationHelpers.js';
 import { generateInvoice, generateInvoiceBuffer } from '../utils/invoice.js';
-import { sendOrderDeliveredEmail } from '../utils/mailer.js';
+import {
+  sendOrderConfirmedEmail,
+  sendOrderPackedEmail,
+  sendOrderShippedEmail,
+  sendOrderDeliveredEmail,
+} from '../utils/mailer.js';
 
 export const createOrder = async (req, res, next) => {
 	try {
@@ -86,6 +91,33 @@ export const getAllOrders = async (req, res, next) => {
 	}
 };
 
+const sendOrderStatusEmailToCustomer = async (order, status, options = {}) => {
+	const user = await User.findById(order.customerId).select('email name').lean();
+	if (!user?.email) return;
+	const email = user.email;
+	const name = user.name || order.customerName || 'Customer';
+	const orderPayload = { _id: order._id, totalAmount: order.totalAmount };
+	try {
+		if (status === 'confirmed') {
+			await sendOrderConfirmedEmail({ email, name, order: orderPayload });
+		} else if (status === 'processing') {
+			await sendOrderPackedEmail({ email, name, order: orderPayload });
+		} else if (status === 'shipped') {
+			await sendOrderShippedEmail({
+				email,
+				name,
+				order: orderPayload,
+				trackingLink: order.trackingLink || options.trackingLink,
+				trackingMessage: order.trackingMessage || options.trackingMessage,
+			});
+		} else if (status === 'delivered') {
+			await sendOrderDeliveredEmail({ email, name, order: orderPayload });
+		}
+	} catch (err) {
+		console.error(`Order ${status} email failed:`, err?.message || err);
+	}
+};
+
 export const updateOrderStatus = async (req, res, next) => {
 	try {
 		const order = await Order.findById(req.params.id);
@@ -121,16 +153,6 @@ export const updateOrderStatus = async (req, res, next) => {
 				entityType: 'Order',
 				entityId: order._id,
 			}).catch(() => {});
-			// Send "order delivered" email to customer
-			User.findById(order.customerId).select('email name').lean().then((user) => {
-				if (user?.email) {
-					sendOrderDeliveredEmail({
-						email: user.email,
-						name: user.name || order.customerName || 'Customer',
-						order: { _id: order._id, totalAmount: order.totalAmount },
-					}).catch((err) => console.error('Delivered email failed:', err?.message || err));
-				}
-			}).catch(() => {});
 		} else if (previousStatus === 'delivered' && nextStatus !== 'delivered') {
 			await User.findByIdAndUpdate(order.customerId, {
 				$inc: {
@@ -138,6 +160,11 @@ export const updateOrderStatus = async (req, res, next) => {
 					totalAmountSpent: -Number(order.totalAmount || 0),
 				},
 			});
+		}
+
+		// Send status email to customer for each transition (Flipkart-style)
+		if (previousStatus !== nextStatus && ['confirmed', 'processing', 'shipped', 'delivered'].includes(nextStatus)) {
+			void sendOrderStatusEmailToCustomer(order, nextStatus);
 		}
 
 		if (previousStatus !== nextStatus) {

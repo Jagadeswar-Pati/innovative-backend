@@ -27,15 +27,64 @@ export const getProductById = async (req, res, next) => {
   }
 };
 
-// GET ALL PRODUCTS
+// GET ALL PRODUCTS (supports pagination: skip, limit; filters: category, search; sort: newest|price-low|price-high|name)
 export const getAllProducts = async (req, res, next) => {
   try {
-    const products = await Product.find().sort({ createdAt: -1 });
-    res.status(200).json({
-      success: true,
-      count: products.length,
-      data: products
-    });
+    const skip = Math.max(0, parseInt(req.query.skip, 10) || 0);
+    const limitParam = parseInt(req.query.limit, 10);
+    const usePagination = Number.isFinite(limitParam) && limitParam > 0;
+    const limit = usePagination ? Math.min(limitParam, 100) : 0;
+    const category = typeof req.query.category === 'string' ? req.query.category.trim() : '';
+    const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
+    const sortParam = (req.query.sort || 'newest').toString().toLowerCase();
+
+    const query = {};
+
+    if (category) {
+      const safeCat = category.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const catRegex = new RegExp(safeCat.replace(/-/g, '[-\\s]*'), 'i');
+      query.categories = catRegex;
+    }
+
+    if (search) {
+      const safeSearch = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const searchRegex = new RegExp(safeSearch, 'i');
+      query.$or = [
+        { name: searchRegex },
+        { shortDescription: searchRegex },
+        { sku: searchRegex },
+        { categories: searchRegex }
+      ];
+    }
+
+    let sort = { createdAt: -1 };
+    if (sortParam === 'price-low') sort = { sellingPrice: 1 };
+    else if (sortParam === 'price-high') sort = { sellingPrice: -1 };
+    else if (sortParam === 'name') sort = { name: 1 };
+    else sort = { createdAt: -1 };
+
+    const baseQuery = Product.find(query);
+
+    if (usePagination) {
+      const [products, total] = await Promise.all([
+        baseQuery.clone().sort(sort).skip(skip).limit(limit).lean(),
+        Product.countDocuments(query)
+      ]);
+      res.status(200).json({
+        success: true,
+        data: products,
+        total,
+        skip,
+        limit
+      });
+    } else {
+      const products = await Product.find(query).sort(sort).lean();
+      res.status(200).json({
+        success: true,
+        count: products.length,
+        data: products
+      });
+    }
   } catch (error) {
     next(error);
   }
