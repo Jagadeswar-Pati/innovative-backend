@@ -1,6 +1,5 @@
 import nodemailer from 'nodemailer';
 import { sendBrevoEmail } from '../services/brevoEmail.service.js';
-import { isInstitutionalEmailDomain } from './emailDomain.js';
 
 const buildTransporter = () => {
   const host = process.env.SMTP_HOST;
@@ -35,40 +34,48 @@ const getSenderDetails = () => {
   return { rawFrom: rawFrom.trim(), email: rawFrom.trim() };
 };
 
+const hasBrevo = () => Boolean(process.env.BREVO_API_KEY);
+
+const formatReplyTo = (replyTo) => {
+  if (!replyTo) return undefined;
+  if (typeof replyTo === 'string') return replyTo;
+  if (replyTo.email && replyTo.name) return `${replyTo.name} <${replyTo.email}>`;
+  return replyTo.email || undefined;
+};
+
 const sendEmailWithFallback = async ({ toEmail, toName, subject, html, attachments = [], replyTo }) => {
   const sender = getSenderDetails();
   if (!sender) {
-    console.warn('SMTP sender not configured; skipping email');
+    console.warn('Mail: sender not configured (set SMTP_FROM or SMTP_USER); skipping email');
     return;
   }
 
-  const isRestrictedDomain = isInstitutionalEmailDomain(toEmail);
   const transporter = buildTransporter();
-
-  if (isRestrictedDomain) {
-    try {
-      await sendBrevoEmail({
-        sender: { email: sender.email, name: sender.name },
-        to: { email: toEmail, name: toName },
-        subject,
-        html,
-        replyTo,
-      });
-    } catch (err) {
-      console.error('Failed to send email via Brevo:', err?.message || err);
-    }
-    return;
-  }
 
   if (transporter) {
     try {
-      await transporter.sendMail({ from: sender.rawFrom, to: toEmail, subject, html, attachments, replyTo });
+      const to = toName ? `"${String(toName).replace(/"/g, '')}" <${toEmail}>` : toEmail;
+      await transporter.sendMail({
+        from: sender.rawFrom,
+        to,
+        subject,
+        html,
+        attachments: attachments || [],
+        replyTo: formatReplyTo(replyTo),
+      });
       return;
     } catch (err) {
-      console.warn('SMTP failed; retrying via Brevo:', err?.message || err);
+      console.warn('SMTP send failed:', err?.message || err);
+      if (!hasBrevo()) {
+        console.warn('Brevo not configured; email not sent. Check SMTP settings.');
+        return;
+      }
     }
   } else {
-    console.warn('SMTP not configured; using Brevo fallback');
+    if (!hasBrevo()) {
+      console.warn('Mail: SMTP not configured (SMTP_HOST, SMTP_USER, SMTP_PASS) and Brevo not set; skipping email');
+      return;
+    }
   }
 
   try {
@@ -80,7 +87,7 @@ const sendEmailWithFallback = async ({ toEmail, toName, subject, html, attachmen
       replyTo,
     });
   } catch (err) {
-    console.error('Failed to send email via Brevo:', err?.message || err);
+    console.error('Brevo fallback failed:', err?.message || err);
   }
 };
 
