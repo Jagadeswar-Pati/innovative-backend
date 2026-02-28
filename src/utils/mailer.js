@@ -43,11 +43,15 @@ const formatReplyTo = (replyTo) => {
   return replyTo.email || undefined;
 };
 
+/**
+ * Send email via SMTP, falling back to Brevo if SMTP fails and Brevo is configured.
+ * @returns {Promise<boolean>} true if email was sent, false if skipped or failed
+ */
 const sendEmailWithFallback = async ({ toEmail, toName, subject, html, attachments = [], replyTo }) => {
   const sender = getSenderDetails();
   if (!sender) {
     console.warn('Mail: sender not configured (set SMTP_FROM or SMTP_USER); skipping email');
-    return;
+    return false;
   }
 
   const transporter = buildTransporter();
@@ -63,18 +67,18 @@ const sendEmailWithFallback = async ({ toEmail, toName, subject, html, attachmen
         attachments: attachments || [],
         replyTo: formatReplyTo(replyTo),
       });
-      return;
+      return true;
     } catch (err) {
       console.warn('SMTP send failed:', err?.message || err);
       if (!hasBrevo()) {
         console.warn('Brevo not configured; email not sent. Check SMTP settings.');
-        return;
+        return false;
       }
     }
   } else {
     if (!hasBrevo()) {
       console.warn('Mail: SMTP not configured (SMTP_HOST, SMTP_USER, SMTP_PASS) and Brevo not set; skipping email');
-      return;
+      return false;
     }
   }
 
@@ -86,8 +90,10 @@ const sendEmailWithFallback = async ({ toEmail, toName, subject, html, attachmen
       html,
       replyTo,
     });
+    return true;
   } catch (err) {
     console.error('Brevo fallback failed:', err?.message || err);
+    return false;
   }
 };
 
@@ -201,14 +207,15 @@ export const sendOrderShippedEmail = async ({ email, name, order, trackingLink, 
 };
 
 export const sendOrderDeliveredEmail = async ({ email, name, order }) => {
-  const subject = `Order Delivered - ${order?._id} | Innovative Hub`;
+  const orderId = order?._id != null ? String(order._id) : '';
+  const subject = `Order Delivered - ${orderId} | Innovative Hub`;
   const baseUrl = process.env.FRONTEND_URL || process.env.LOGIN_URL || 'http://localhost:5177';
-  const orderPageUrl = `${baseUrl.replace(/\/$/, '')}/order/${order?._id}`;
+  const orderPageUrl = `${baseUrl.replace(/\/$/, '')}/order/${orderId}`;
   const html = `
     <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #111;">
       <p>Hi ${name || 'Customer'},</p>
       <p><strong>Your order has been successfully delivered.</strong></p>
-      <p>Order ID: <strong>${order?._id}</strong></p>
+      <p>Order ID: <strong>${orderId}</strong></p>
       <p>Total: <strong>₹${Number(order?.totalAmount || 0).toFixed(2)}</strong></p>
       <p>Thank you for shopping with us. We hope you are satisfied with your purchase.</p>
       <p>You can view your order details here: <a href="${orderPageUrl}">View order</a>.</p>
@@ -216,7 +223,7 @@ export const sendOrderDeliveredEmail = async ({ email, name, order }) => {
     </div>
   `;
 
-  await sendEmailWithFallback({ toEmail: email, toName: name, subject, html });
+  return sendEmailWithFallback({ toEmail: email, toName: name, subject, html });
 };
 
 export const sendOrderFailedEmail = async ({ email, name, reason }) => {

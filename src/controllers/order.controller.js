@@ -91,17 +91,44 @@ export const getAllOrders = async (req, res, next) => {
 	}
 };
 
-const sendOrderStatusEmailToCustomer = async (order, status, options = {}) => {
+/**
+ * Get the registered customer's email and name for an order.
+ * Always uses the User account linked by order.customerId (the account that placed the order).
+ * @returns {{ email: string, name: string } | null} null if user not found or has no email
+ */
+const getRegisteredCustomerForOrder = async (order) => {
+	if (!order?.customerId) return null;
 	const user = await User.findById(order.customerId).select('email name').lean();
-	if (!user?.email) return;
-	const email = user.email;
-	const name = user.name || order.customerName || 'Customer';
-	const orderPayload = { _id: order._id, totalAmount: order.totalAmount };
+	const email = typeof user?.email === 'string' ? user.email.trim() : '';
+	if (!email) return null;
+	return {
+		email: email.toLowerCase(),
+		name: (user?.name || order.customerName || 'Customer').trim() || 'Customer',
+	};
+};
+
+/**
+ * Send order status email to the registered customer only.
+ * Recipient is always the email of the User account that placed the order (order.customerId).
+ */
+const sendOrderStatusEmailToCustomer = async (order, status, options = {}) => {
+	const customer = await getRegisteredCustomerForOrder(order);
+	if (!customer) {
+		console.warn(`Order status email skipped (no registered email for customer): order=${order._id}, status=${status}`);
+		return;
+	}
+	const { email, name } = customer;
+	const orderPayload = {
+		_id: order._id != null ? String(order._id) : order._id,
+		totalAmount: order.totalAmount,
+	};
 	try {
 		if (status === 'confirmed') {
 			await sendOrderConfirmedEmail({ email, name, order: orderPayload });
+			console.log(`Order status email (confirmed) sent to registered email ${email}, order ${order._id}`);
 		} else if (status === 'processing') {
 			await sendOrderPackedEmail({ email, name, order: orderPayload });
+			console.log(`Order status email (packed) sent to registered email ${email}, order ${order._id}`);
 		} else if (status === 'shipped') {
 			await sendOrderShippedEmail({
 				email,
@@ -110,20 +137,31 @@ const sendOrderStatusEmailToCustomer = async (order, status, options = {}) => {
 				trackingLink: order.trackingLink || options.trackingLink,
 				trackingMessage: order.trackingMessage || options.trackingMessage,
 			});
+			console.log(`Order status email (shipped) sent to registered email ${email}, order ${order._id}`);
 		} else if (status === 'delivered') {
-			await sendOrderDeliveredEmail({ email, name, order: orderPayload });
+			const sent = await sendOrderDeliveredEmail({ email, name, order: orderPayload });
+			if (sent) {
+				console.log(`Order status email (delivered) sent to registered email ${email}, order ${order._id}`);
+			} else {
+				console.warn(`Order delivered email not sent (mail not configured or send failed): order=${order._id}`);
+			}
 		}
 	} catch (err) {
-		console.error(`Order ${status} email failed:`, err?.message || err);
+		console.error(`Order ${status} email failed (registered email ${email}):`, err?.message || err);
 	}
 };
+
+const VALID_ORDER_STATUSES = ['pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled'];
 
 export const updateOrderStatus = async (req, res, next) => {
 	try {
 		const order = await Order.findById(req.params.id);
 		if (!order) return res.status(404).json({ success: false, message: 'Order not found' });
+		const nextStatus = req.body?.status;
+		if (!nextStatus || !VALID_ORDER_STATUSES.includes(nextStatus)) {
+			return res.status(400).json({ success: false, message: `Invalid status. Use one of: ${VALID_ORDER_STATUSES.join(', ')}` });
+		}
 		const previousStatus = order.orderStatus;
-		const nextStatus = req.body.status;
 
 		order.orderStatus = nextStatus;
 		// Sync delivery_status with order status when applicable
@@ -162,9 +200,9 @@ export const updateOrderStatus = async (req, res, next) => {
 			});
 		}
 
-		// Send status email to customer for each transition (Flipkart-style)
+		// Send status email to customer when status changes (confirmed, packed, shipped, delivered)
 		if (previousStatus !== nextStatus && ['confirmed', 'processing', 'shipped', 'delivered'].includes(nextStatus)) {
-			void sendOrderStatusEmailToCustomer(order, nextStatus);
+			await sendOrderStatusEmailToCustomer(order, nextStatus);
 		}
 
 		if (previousStatus !== nextStatus) {
