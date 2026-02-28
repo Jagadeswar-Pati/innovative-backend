@@ -200,9 +200,11 @@ export const updateOrderStatus = async (req, res, next) => {
 			});
 		}
 
-		// Send status email to customer when status changes (confirmed, packed, shipped, delivered)
+		// Send status email in background (don't block response — keeps admin UI smooth)
 		if (previousStatus !== nextStatus && ['confirmed', 'processing', 'shipped', 'delivered'].includes(nextStatus)) {
-			await sendOrderStatusEmailToCustomer(order, nextStatus);
+			void sendOrderStatusEmailToCustomer(order, nextStatus).catch((err) =>
+				console.error('Order status email (background):', err?.message || err)
+			);
 		}
 
 		if (previousStatus !== nextStatus) {
