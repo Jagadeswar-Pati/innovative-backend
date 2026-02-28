@@ -274,12 +274,13 @@ export const sendContactEmail = async ({ toEmail, fromName, fromEmail, subject, 
     </div>
   `;
 
-  await sendEmailWithFallback({
+  const sent = await sendEmailWithFallback({
     toEmail,
     toName: 'Innovative Hub',
     subject: subject ? `Contact: ${subject}` : 'New Contact Message',
     html,
-    attachments,
+    attachments: attachments || [],
     replyTo: fromEmail ? { email: fromEmail, name: fromName } : undefined,
   });
+  return sent;
 };
