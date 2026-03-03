@@ -258,14 +258,15 @@ export const sendOrderFailedEmail = async ({ email, name, reason }) => {
   await sendEmailWithFallback({ toEmail: email, toName: name, subject, html });
 };
 
+/** Sends reset link only. Never includes old/new password or token as plain text. */
 export const sendPasswordResetEmail = async ({ email, name, resetUrl }) => {
   const subject = 'Reset your Innovative Hub password';
   const html = `
     <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #111;">
       <p>Hi ${name || 'Customer'},</p>
       <p>We received a request to reset your password.</p>
-      <p>Click the link below to set a new password:</p>
-      <p><a href="${resetUrl}">${resetUrl}</a></p>
+      <p>Click the button below to set a new password:</p>
+      <p><a href="${resetUrl}" style="display:inline-block;background:#0d6efd;color:#fff;padding:10px 20px;text-decoration:none;border-radius:6px;font-weight:600;">Reset my password</a></p>
       <p>This link will expire in 1 hour. If you did not request this, you can ignore this email.</p>
       <p>— Innovative Hub Team</p>
     </div>
