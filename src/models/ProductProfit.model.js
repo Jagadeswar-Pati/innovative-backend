@@ -9,8 +9,6 @@ const productProfitSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-productProfitSchema.index({ productId: 1 });
-
 const ProductProfit = mongoose.model('ProductProfit', productProfitSchema);
 
 export default ProductProfit;

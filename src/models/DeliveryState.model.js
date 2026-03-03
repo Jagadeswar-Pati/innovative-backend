@@ -10,7 +10,6 @@ const deliveryStateSchema = new mongoose.Schema(
 	{ timestamps: true }
 );
 
-deliveryStateSchema.index({ state: 1 });
 deliveryStateSchema.index({ enabled: 1 });
 
 const DeliveryState = mongoose.model('DeliveryState', deliveryStateSchema);
