@@ -80,6 +80,13 @@ const productSchema = new mongoose.Schema(
           default: ''
         }
       }
+    ],
+
+    videos: [
+      {
+        url: { type: String, required: true },
+        publicId: { type: String, default: '' }
+      }
     ]
   },
   { timestamps: true }

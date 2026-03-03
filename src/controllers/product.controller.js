@@ -90,7 +90,29 @@ export const getAllProducts = async (req, res, next) => {
   }
 };
 
-// CREATE PRODUCT (UPLOAD IMAGES or accept URL strings)
+// Normalize media array (images or videos): URLs or { url, publicId }
+const normalizeMedia = (list) => {
+  if (!list) return [];
+  const arr = Array.isArray(list) ? list : [list];
+  return arr
+    .map((item) => {
+      if (!item) return null;
+      if (typeof item === 'string') {
+        const url = item.trim();
+        return url ? { url, publicId: '' } : null;
+      }
+      if (typeof item === 'object') {
+        const url = (item.url || item.secure_url || '').toString().trim();
+        if (!url) return null;
+        const publicId = (item.publicId || item.public_id || '').toString();
+        return { url, publicId };
+      }
+      return null;
+    })
+    .filter(Boolean);
+};
+
+// CREATE PRODUCT (UPLOAD IMAGES or accept URL strings; VIDEOS as URLs from /upload/video)
 export const createProduct = async (req, res, next) => {
   try {
     let uploadedImages = [];
@@ -110,10 +132,13 @@ export const createProduct = async (req, res, next) => {
         .map((url) => ({ url: url.trim(), publicId: '' }));
     }
 
-    const { images: _bodyImages, ...restBody } = req.body;
+    const videos = normalizeMedia(req.body.videos);
+
+    const { images: _bodyImages, videos: _bodyVideos, ...restBody } = req.body;
     const product = await Product.create({
       ...restBody,
-      images: uploadedImages
+      images: uploadedImages,
+      videos
     });
 
     res.status(201).json({
@@ -131,28 +156,15 @@ export const updateProduct = async (req, res, next) => {
   try {
     const normalizeImages = (images) => {
       if (!images) return undefined;
-      const list = Array.isArray(images) ? images : [images];
-      return list
-        .map((img) => {
-          if (!img) return null;
-          if (typeof img === 'string') {
-            const url = img.trim();
-            return url ? { url, publicId: '' } : null;
-          }
-          if (typeof img === 'object') {
-            const url = (img.url || img.secure_url || '').toString().trim();
-            if (!url) return null;
-            const publicId = (img.publicId || img.public_id || '').toString();
-            return { url, publicId };
-          }
-          return null;
-        })
-        .filter(Boolean);
+      return normalizeMedia(images);
     };
 
     const updates = { ...req.body };
     if (req.body.images) {
       updates.images = normalizeImages(req.body.images);
+    }
+    if (req.body.videos !== undefined) {
+      updates.videos = normalizeMedia(req.body.videos);
     }
 
     const product = await Product.findByIdAndUpdate(req.params.id, updates, {
@@ -236,7 +248,7 @@ export const deleteProduct = async (req, res, next) => {
     }
 
     // Delete images from Cloudinary (skip if no publicId - pasted URLs)
-    for (const img of product.images) {
+    for (const img of product.images || []) {
       if (img.publicId) {
         try {
           await cloudinary.uploader.destroy(img.publicId);
@@ -245,12 +257,22 @@ export const deleteProduct = async (req, res, next) => {
         }
       }
     }
+    // Delete videos from Cloudinary
+    for (const vid of product.videos || []) {
+      if (vid.publicId) {
+        try {
+          await cloudinary.uploader.destroy(vid.publicId, { resource_type: 'video' });
+        } catch (e) {
+          console.warn('Cloudinary delete failed for video', vid.publicId, e.message);
+        }
+      }
+    }
 
     await product.deleteOne();
 
     res.status(200).json({
       success: true,
-      message: 'Product and images deleted successfully'
+      message: 'Product, images and videos deleted successfully'
     });
   } catch (error) {
     next(error);

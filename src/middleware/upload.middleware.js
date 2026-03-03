@@ -4,7 +4,8 @@ import cloudinary from '../config/cloudinary.js';
 // Configure multer for memory storage (no local files)
 const storage = multer.memoryStorage();
 
-const fileFilter = (req, file, cb) => {
+// Images only (existing behaviour)
+const imageFileFilter = (req, file, cb) => {
   if (file.mimetype.startsWith('image/')) {
     cb(null, true);
   } else {
@@ -14,11 +15,30 @@ const fileFilter = (req, file, cb) => {
 
 const upload = multer({
   storage,
-  fileFilter,
+  fileFilter: imageFileFilter,
   limits: {
     fileSize: 5 * 1024 * 1024 // 5MB limit
   }
 });
+
+// Videos only (for product videos)
+const videoFileFilter = (req, file, cb) => {
+  if (file.mimetype.startsWith('video/')) {
+    cb(null, true);
+  } else {
+    cb(new Error('Only video files are allowed'), false);
+  }
+};
+
+const uploadVideo = multer({
+  storage,
+  fileFilter: videoFileFilter,
+  limits: {
+    fileSize: 100 * 1024 * 1024 // 100MB for videos
+  }
+});
+
+export { uploadVideo };
 
 // Cloudinary upload helper function
 export const uploadToCloudinary = async (fileBuffer, folder = 'innovative-hub', resourceType = 'auto') => {
