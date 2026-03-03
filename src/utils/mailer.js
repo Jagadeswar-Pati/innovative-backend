@@ -43,6 +43,19 @@ const formatReplyTo = (replyTo) => {
   return replyTo.email || undefined;
 };
 
+/** Base URL for all email links (login, order, checkout). Use FRONTEND_URL on Render so links point to live site, not localhost. */
+export const getFrontendBaseUrl = () => {
+  const u = process.env.FRONTEND_URL?.trim();
+  if (u) return u.replace(/\/$/, '');
+  const login = process.env.LOGIN_URL?.trim();
+  if (login) return login.replace(/\/login\/?$/, '').replace(/\/$/, '');
+  if (process.env.NODE_ENV === 'production' && process.env.DOMAIN?.trim()) {
+    const d = process.env.DOMAIN.trim().replace(/^https?:\/\//, '');
+    return `https://${d}`;
+  }
+  return 'http://localhost:5177';
+};
+
 /**
  * Send email via SMTP, falling back to Brevo if SMTP fails and Brevo is configured.
  * @returns {Promise<boolean>} true if email was sent, false if skipped or failed
@@ -98,8 +111,8 @@ const sendEmailWithFallback = async ({ toEmail, toName, subject, html, attachmen
 };
 
 export const sendWelcomeEmail = async ({ email, name }) => {
-  const baseUrl = process.env.LOGIN_URL || process.env.FRONTEND_URL || 'http://localhost:5174/login';
-  const loginUrl = baseUrl.endsWith('/login') ? baseUrl : `${baseUrl.replace(/\/$/, '')}/login`;
+  const baseUrl = getFrontendBaseUrl();
+  const loginUrl = `${baseUrl}/login`;
   const subject = 'Welcome to Innovative Hub';
   const html = `
     <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #111;">
@@ -126,8 +139,8 @@ export const sendWelcomeEmail = async ({ email, name }) => {
 
 export const sendOrderSuccessEmail = async ({ email, name, order, invoiceUrl, invoicePdfBuffer, invoiceFilename }) => {
   const subject = `Order Confirmed - ${order?._id}`;
-  const baseUrl = process.env.FRONTEND_URL || process.env.LOGIN_URL || 'http://localhost:5177';
-  const orderPageUrl = `${baseUrl.replace(/\/$/, '')}/order/${order?._id}`;
+  const baseUrl = getFrontendBaseUrl();
+  const orderPageUrl = `${baseUrl}/order/${order?._id}`;
   const html = `
     <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #111;">
       <p>Hi ${name || 'Customer'},</p>
@@ -148,13 +161,13 @@ export const sendOrderSuccessEmail = async ({ email, name, order, invoiceUrl, in
 };
 
 const orderLinkHtml = (orderId, baseUrl, label = 'View order') => {
-  const url = `${(baseUrl || process.env.FRONTEND_URL || 'http://localhost:5177').replace(/\/$/, '')}/order/${orderId}`;
-  return `<a href="${url}">${label}</a>`;
+  const base = baseUrl || getFrontendBaseUrl();
+  return `<a href="${base.replace(/\/$/, '')}/order/${orderId}">${label}</a>`;
 };
 
 export const sendOrderConfirmedEmail = async ({ email, name, order }) => {
   const subject = `Order Confirmed - ${order?._id} | Innovative Hub`;
-  const baseUrl = process.env.FRONTEND_URL || process.env.LOGIN_URL || 'http://localhost:5177';
+  const baseUrl = getFrontendBaseUrl();
   const html = `
     <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #111;">
       <p>Hi ${name || 'Customer'},</p>
@@ -171,7 +184,7 @@ export const sendOrderConfirmedEmail = async ({ email, name, order }) => {
 
 export const sendOrderPackedEmail = async ({ email, name, order }) => {
   const subject = `Order Packed - ${order?._id} | Innovative Hub`;
-  const baseUrl = process.env.FRONTEND_URL || process.env.LOGIN_URL || 'http://localhost:5177';
+  const baseUrl = getFrontendBaseUrl();
   const html = `
     <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #111;">
       <p>Hi ${name || 'Customer'},</p>
@@ -188,7 +201,7 @@ export const sendOrderPackedEmail = async ({ email, name, order }) => {
 
 export const sendOrderShippedEmail = async ({ email, name, order, trackingLink, trackingMessage }) => {
   const subject = `Order Shipped - ${order?._id} | Innovative Hub`;
-  const baseUrl = process.env.FRONTEND_URL || process.env.LOGIN_URL || 'http://localhost:5177';
+  const baseUrl = getFrontendBaseUrl();
   const trackingSection = (trackingLink || trackingMessage)
     ? `<p><strong>Tracking:</strong> ${trackingLink ? `<a href="${trackingLink}">Track your shipment</a>` : ''} ${trackingMessage ? ` – ${trackingMessage}` : ''}</p>`
     : '<p>You will receive tracking details soon.</p>';
@@ -209,8 +222,8 @@ export const sendOrderShippedEmail = async ({ email, name, order, trackingLink, 
 export const sendOrderDeliveredEmail = async ({ email, name, order }) => {
   const orderId = order?._id != null ? String(order._id) : '';
   const subject = `Order Delivered - ${orderId} | Innovative Hub`;
-  const baseUrl = process.env.FRONTEND_URL || process.env.LOGIN_URL || 'http://localhost:5177';
-  const orderPageUrl = `${baseUrl.replace(/\/$/, '')}/order/${orderId}`;
+  const baseUrl = getFrontendBaseUrl();
+  const orderPageUrl = `${baseUrl}/order/${orderId}`;
   const html = `
     <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #111;">
       <p>Hi ${name || 'Customer'},</p>
@@ -228,8 +241,8 @@ export const sendOrderDeliveredEmail = async ({ email, name, order }) => {
 
 export const sendOrderFailedEmail = async ({ email, name, reason }) => {
   const subject = 'Payment Failed - Innovative Hub';
-  const baseUrl = process.env.FRONTEND_URL || process.env.LOGIN_URL || 'http://localhost:5177';
-  const checkoutUrl = `${baseUrl.replace(/\/$/, '')}/checkout`;
+  const baseUrl = getFrontendBaseUrl();
+  const checkoutUrl = `${baseUrl}/checkout`;
   const html = `
     <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #111;">
       <p>Hi ${name || 'Customer'},</p>

@@ -2,7 +2,7 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { OAuth2Client } from 'google-auth-library';
 import User from '../models/User.model.js';
-import { sendWelcomeEmail, sendPasswordResetEmail } from '../utils/mailer.js';
+import { sendWelcomeEmail, sendPasswordResetEmail, getFrontendBaseUrl } from '../utils/mailer.js';
 
 const googleClient = process.env.GOOGLE_CLIENT_ID
   ? new OAuth2Client(process.env.GOOGLE_CLIENT_ID)
@@ -287,8 +287,8 @@ export const forgotPassword = async (req, res, next) => {
     user.resetPasswordExpires = new Date(Date.now() + 60 * 60 * 1000);
     await user.save();
 
-    const baseUrl = process.env.FRONTEND_URL || process.env.LOGIN_URL || 'http://localhost:5174';
-    const resetUrl = `${baseUrl.replace(/\/$/, '')}/reset-password?token=${token}`;
+    const baseUrl = getFrontendBaseUrl();
+    const resetUrl = `${baseUrl}/reset-password?token=${token}`;
     void sendPasswordResetEmail({ email: user.email, name: user.name, resetUrl });
 
     return res.json({ success: true, message: 'If an account exists, a reset link has been sent.' });
