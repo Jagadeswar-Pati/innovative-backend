@@ -2,7 +2,7 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { OAuth2Client } from 'google-auth-library';
 import User from '../models/User.model.js';
-import { sendWelcomeEmail, sendPasswordResetEmail, getFrontendBaseUrl } from '../utils/mailer.js';
+import { sendWelcomeEmail, sendPasswordResetEmail, sendVerificationEmail, getFrontendBaseUrl } from '../utils/mailer.js';
 
 const googleClient = process.env.GOOGLE_CLIENT_ID
   ? new OAuth2Client(process.env.GOOGLE_CLIENT_ID)
@@ -49,36 +49,29 @@ export const register = async (req, res, next) => {
       });
     }
 
-    // Create new user
+    // Create new user (emailVerified: false until they click link in email)
+    const verifyToken = crypto.randomBytes(32).toString('hex');
+    const verifyTokenHash = crypto.createHash('sha256').update(verifyToken).digest('hex');
     const user = await User.create({
       name,
       email: email.toLowerCase(),
       password,
       mobile,
-      authProvider: 'email'
+      authProvider: 'email',
+      emailVerified: false,
+      emailVerifyToken: verifyTokenHash,
+      emailVerifyExpires: new Date(Date.now() + 24 * 60 * 60 * 1000),
     });
 
-    // Generate token
-    const token = generateToken(user._id);
-
-    // Return user data without password
-    const userResponse = {
-      id: user._id,
-      name: user.name,
-      email: user.email,
-      mobile: user.mobile,
-      profileImage: user.profileImage,
-      addresses: user.addresses
-    };
+    const baseUrl = getFrontendBaseUrl();
+    const verifyUrl = `${baseUrl}/verify-email?token=${verifyToken}`;
+    void sendVerificationEmail({ email: user.email, name: user.name, verifyUrl });
 
     res.status(201).json({
       success: true,
-      message: 'User registered successfully',
-      data: { token, user: userResponse }
+      message: 'Please verify your email. We sent a verification link to your inbox.',
+      data: {}
     });
-
-    // Send welcome email asynchronously (do not block signup)
-    void sendWelcomeEmail({ email: user.email, name: user.name });
   } catch (err) {
     next(err);
   }
@@ -108,6 +101,13 @@ export const login = async (req, res, next) => {
       return res.status(403).json({
         success: false,
         message: 'Account is blocked'
+      });
+    }
+
+    if (user.authProvider === 'email' && user.emailVerified === false) {
+      return res.status(403).json({
+        success: false,
+        message: 'Please verify your email first. Check your inbox for the verification link.',
       });
     }
 
@@ -202,13 +202,14 @@ export const googleLogin = async (req, res, next) => {
       }
       await user.save();
     } else {
-      // Create new user
+      // Create new user (Google email is already verified)
       user = await User.create({
         googleId,
         name: name || email.split('@')[0],
         email: email.toLowerCase(),
         profileImage: picture,
-        authProvider: 'google'
+        authProvider: 'google',
+        emailVerified: true,
       });
       isNewUser = true;
     }
@@ -326,6 +327,76 @@ export const resetPassword = async (req, res, next) => {
     await user.save();
 
     return res.json({ success: true, message: 'Password has been reset successfully' });
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const verifyEmail = async (req, res, next) => {
+  try {
+    const token = req.query.token || req.body?.token;
+    if (!token) {
+      return res.status(400).json({ success: false, message: 'Verification token is required' });
+    }
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    const user = await User.findOne({
+      emailVerifyToken: tokenHash,
+      emailVerifyExpires: { $gt: new Date() },
+    });
+    if (!user) {
+      return res.status(400).json({ success: false, message: 'Invalid or expired verification link' });
+    }
+    user.emailVerified = true;
+    user.emailVerifyToken = undefined;
+    user.emailVerifyExpires = undefined;
+    await user.save();
+
+    void sendWelcomeEmail({ email: user.email, name: user.name });
+
+    const jwtToken = generateToken(user._id);
+    const userResponse = {
+      id: user._id,
+      name: user.name,
+      email: user.email,
+      mobile: user.mobile,
+      profileImage: user.profileImage,
+      addresses: user.addresses,
+    };
+
+    return res.json({
+      success: true,
+      message: 'Email verified. You can now log in.',
+      data: { token: jwtToken, user: userResponse },
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const resendVerifyEmail = async (req, res, next) => {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ success: false, message: 'Email is required' });
+    }
+    const user = await User.findOne({ email: email.toLowerCase(), authProvider: 'email' });
+    if (!user) {
+      return res.json({ success: true, message: 'If an account exists, a new verification email has been sent.' });
+    }
+    if (user.emailVerified) {
+      return res.json({ success: true, message: 'This email is already verified. You can log in.' });
+    }
+    const verifyToken = crypto.randomBytes(32).toString('hex');
+    const verifyTokenHash = crypto.createHash('sha256').update(verifyToken).digest('hex');
+    user.emailVerifyToken = verifyTokenHash;
+    user.emailVerifyExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    await user.save();
+
+    const baseUrl = getFrontendBaseUrl();
+    const verifyUrl = `${baseUrl}/verify-email?token=${verifyToken}`;
+    void sendVerificationEmail({ email: user.email, name: user.name, verifyUrl });
+
+    return res.json({ success: true, message: 'Verification email sent. Please check your inbox.' });
   } catch (err) {
     next(err);
   }

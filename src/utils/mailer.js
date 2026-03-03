@@ -275,6 +275,23 @@ export const sendPasswordResetEmail = async ({ email, name, resetUrl }) => {
   await sendEmailWithFallback({ toEmail: email, toName: name, subject, html });
 };
 
+/** Sends email verification link with a button. Account is active only after user clicks. */
+export const sendVerificationEmail = async ({ email, name, verifyUrl }) => {
+  const subject = 'Verify your Innovative Hub account';
+  const html = `
+    <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #111;">
+      <p>Hi ${name || 'Customer'},</p>
+      <p>Thanks for signing up! Please verify your email address to activate your account.</p>
+      <p>Click the button below to verify:</p>
+      <p><a href="${verifyUrl}" style="display:inline-block;background:#0d6efd;color:#fff;padding:10px 20px;text-decoration:none;border-radius:6px;font-weight:600;">Verify my email</a></p>
+      <p>This link will expire in 24 hours. If you did not create an account, you can ignore this email.</p>
+      <p>— Innovative Hub Team</p>
+    </div>
+  `;
+
+  await sendEmailWithFallback({ toEmail: email, toName: name, subject, html });
+};
+
 export const sendContactEmail = async ({ toEmail, fromName, fromEmail, subject, message, attachments, attachmentList }) => {
   const html = `
     <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #111;">
