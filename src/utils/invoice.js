@@ -27,7 +27,7 @@ const COMPANY = {
     'Odisha, India - 751003',
   ],
   gstin: '21HSRPP8072D1ZD',
-  email: 'innovativehubofficial@gmail.com',
+  email: 'inovativehubofficial@gmail.com',
 };
 
 // Reserved Y space: totals box + gap + footer

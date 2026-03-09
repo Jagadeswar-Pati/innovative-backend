@@ -92,6 +92,14 @@ const productSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// Indexes for fast list queries: pagination, category filter, sort by newest
+productSchema.index({ _id: 1 });
+productSchema.index({ categories: 1 });
+productSchema.index({ createdAt: -1 });
+productSchema.index({ categories: 1, createdAt: -1 });
+productSchema.index({ status: 1, createdAt: -1 });
+productSchema.index({ status: 1, categories: 1, createdAt: -1 });
+
 productSchema.pre('save', function (next) {
   this.stockStatus =
     this.stockQuantity > 0 ? 'in_stock' : 'out_of_stock';

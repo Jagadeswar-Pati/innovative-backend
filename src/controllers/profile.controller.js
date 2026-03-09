@@ -50,7 +50,7 @@ export const addAddress = async (req, res) => {
   }
 };
 
-// Update address
+// Update address (use .id() which accepts string or ObjectId)
 export const updateAddress = async (req, res) => {
   try {
     const { addressId } = req.params;
@@ -66,12 +66,12 @@ export const updateAddress = async (req, res) => {
   }
 };
 
-// Delete address
+// Delete address (remove from DB; compare _id as string so filter matches)
 export const deleteAddress = async (req, res) => {
   try {
     const { addressId } = req.params;
     const user = await User.findById(req.user._id);
-    user.addresses = user.addresses.filter(addr => addr._id !== addressId);
+    user.addresses = user.addresses.filter((addr) => String(addr._id) !== String(addressId));
     await user.save();
     res.json({ success: true, data: user });
   } catch (err) {
@@ -79,13 +79,13 @@ export const deleteAddress = async (req, res) => {
   }
 };
 
-// Set default address
+// Set default address (compare _id as string so correct address is set)
 export const setDefaultAddress = async (req, res) => {
   try {
     const { addressId } = req.params;
     const user = await User.findById(req.user._id);
-    user.addresses.forEach(addr => {
-      addr.isDefault = addr._id === addressId;
+    user.addresses.forEach((addr) => {
+      addr.isDefault = String(addr._id) === String(addressId);
     });
     await user.save();
     res.json({ success: true, data: user });

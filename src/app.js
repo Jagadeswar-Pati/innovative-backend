@@ -1,6 +1,7 @@
 import dotenv from 'dotenv';
 import express from 'express';
 import cors from 'cors';
+import compression from 'compression';
 import errorHandler from './middleware/errorHandler.middleware.js';
 import adminRoutes from './routes/admin.routes.js';
 import authRoutes from './routes/auth.routes.js';
@@ -26,6 +27,7 @@ dotenv.config();
 const app = express();
 
 // Middleware
+app.use(compression());
 app.use(express.json());
 app.get('/api/health', (_req, res) => {
   res.status(200).json({ status: 'ok' });

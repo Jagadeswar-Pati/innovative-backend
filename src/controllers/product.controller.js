@@ -3,6 +3,15 @@ import Product from '../models/Product.model.js';
 import { uploadToCloudinary } from '../middleware/upload.middleware.js';
 import cloudinary from '../config/cloudinary.js';
 import { createNotification } from '../utils/notificationHelpers.js';
+import productListCache from '../utils/productListCache.js';
+
+/** Lean projection for list endpoint: id, name, price, thumbnail, rating + fields needed for frontend cards */
+const LIST_PROJECTION =
+  '_id name sellingPrice mrp gstMode gstPercentage categories images videos stockQuantity sku shortDescription createdAt updatedAt';
+
+const DEFAULT_PAGE_SIZE = 20;
+const MAX_PAGE_SIZE = 100;
+const CACHE_TTL_SEC = 60;
 
 // GET PRODUCT BY ID
 export const getProductById = async (req, res, next) => {
@@ -27,64 +36,108 @@ export const getProductById = async (req, res, next) => {
   }
 };
 
-// GET ALL PRODUCTS (supports pagination: skip, limit; filters: category, search; sort: newest|price-low|price-high|name)
+/**
+ * GET ALL PRODUCTS — optimized for high performance.
+ * Query params: page, limit (default 20). Also supports skip for backward compatibility.
+ * Response: { products, totalProducts, currentPage, totalPages } plus data/total for frontend.
+ * Uses LIMIT/OFFSET, lean projection, indexing, and optional caching.
+ * @param {import('express').Request} req
+ * @param {import('express').Response} res
+ * @param {import('express').NextFunction} next
+ */
 export const getAllProducts = async (req, res, next) => {
   try {
-    const skip = Math.max(0, parseInt(req.query.skip, 10) || 0);
     const limitParam = parseInt(req.query.limit, 10);
-    const usePagination = Number.isFinite(limitParam) && limitParam > 0;
-    const limit = usePagination ? Math.min(limitParam, 100) : 0;
+    const pageParam = parseInt(req.query.page, 10);
+    const skipParam = parseInt(req.query.skip, 10);
+
+    const limit = Number.isFinite(limitParam) && limitParam > 0
+      ? Math.min(limitParam, MAX_PAGE_SIZE)
+      : DEFAULT_PAGE_SIZE;
+
+    let page = Number.isFinite(pageParam) && pageParam >= 1 ? pageParam : 1;
+    if (Number.isFinite(skipParam) && skipParam >= 0 && !Number.isFinite(pageParam)) {
+      page = Math.floor(skipParam / limit) + 1;
+    }
+    const skip = (page - 1) * limit;
+
     const category = typeof req.query.category === 'string' ? req.query.category.trim() : '';
     const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
     const sortParam = (req.query.sort || 'newest').toString().toLowerCase();
 
-    const query = {};
+    const cacheKey = productListCache.buildKey({ page, limit, category, search, sort: sortParam });
+    const cached = productListCache.get(cacheKey);
+    if (cached) {
+      return res.status(200).json(cached);
+    }
+
+    const query = { status: 'active' };
 
     if (category) {
       const safeCat = category.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const catRegex = new RegExp(safeCat.replace(/-/g, '[-\\s]*'), 'i');
+      const catRegex = new RegExp(safeCat.replace(/-/g, '[-\\s&/]*'), 'i');
       query.categories = catRegex;
     }
 
     if (search) {
-      const safeSearch = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const searchRegex = new RegExp(safeSearch, 'i');
-      query.$or = [
-        { name: searchRegex },
-        { shortDescription: searchRegex },
-        { sku: searchRegex },
-        { categories: searchRegex }
-      ];
+      const words = search
+        .split(/\s+/)
+        .map((w) => w.trim())
+        .filter((w) => w.length >= 2);
+      if (words.length > 0) {
+        query.$and = words.map((word) => {
+          const safe = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const regex = new RegExp(safe, 'i');
+          return {
+            $or: [
+              { name: regex },
+              { shortDescription: regex },
+              { sku: regex },
+              { categories: regex }
+            ]
+          };
+        });
+      }
     }
 
     let sort = { createdAt: -1 };
     if (sortParam === 'price-low') sort = { sellingPrice: 1 };
     else if (sortParam === 'price-high') sort = { sellingPrice: -1 };
     else if (sortParam === 'name') sort = { name: 1 };
-    else sort = { createdAt: -1 };
 
-    const baseQuery = Product.find(query);
+    const [products, totalProducts] = await Promise.all([
+      Product.find(query)
+        .select(LIST_PROJECTION)
+        .sort(sort)
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      Product.countDocuments(query)
+    ]);
 
-    if (usePagination) {
-      const [products, total] = await Promise.all([
-        baseQuery.clone().sort(sort).skip(skip).limit(limit).lean(),
-        Product.countDocuments(query)
-      ]);
-      res.status(200).json({
-        success: true,
-        data: products,
-        total,
-        skip,
-        limit
-      });
-    } else {
-      const products = await Product.find(query).sort(sort).lean();
-      res.status(200).json({
-        success: true,
-        count: products.length,
-        data: products
-      });
-    }
+    const totalPages = Math.max(1, Math.ceil(totalProducts / limit));
+
+    const items = products.map((p) => ({
+      ...p,
+      rating: 0,
+      thumbnail: Array.isArray(p.images) && p.images[0] && p.images[0].url
+        ? p.images[0].url
+        : ''
+    }));
+
+    const payload = {
+      success: true,
+      products: items,
+      totalProducts,
+      currentPage: page,
+      totalPages,
+      data: items,
+      total: totalProducts
+    };
+
+    productListCache.set(cacheKey, payload, CACHE_TTL_SEC);
+
+    res.status(200).json(payload);
   } catch (error) {
     next(error);
   }
@@ -141,6 +194,8 @@ export const createProduct = async (req, res, next) => {
       videos
     });
 
+    productListCache.invalidateAll();
+
     res.status(201).json({
       success: true,
       message: 'Product created successfully',
@@ -179,6 +234,8 @@ export const updateProduct = async (req, res, next) => {
       });
     }
 
+    productListCache.invalidateAll();
+
     res.status(200).json({
       success: true,
       message: 'Product updated successfully',
@@ -197,6 +254,8 @@ export const toggleProductStatus = async (req, res, next) => {
       { status: req.body.status },
       { new: true }
     );
+
+    productListCache.invalidateAll();
 
     res.status(200).json({
       success: true,
@@ -229,6 +288,8 @@ export const updateProductStock = async (req, res, next) => {
         entityId: product._id,
       });
     }
+    productListCache.invalidateAll();
+
     res.status(200).json({ success: true, data: product });
   } catch (error) {
     next(error);
@@ -269,6 +330,8 @@ export const deleteProduct = async (req, res, next) => {
     }
 
     await product.deleteOne();
+
+    productListCache.invalidateAll();
 
     res.status(200).json({
       success: true,
