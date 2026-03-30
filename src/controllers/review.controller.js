@@ -199,3 +199,102 @@ export const deleteReview = async (req, res, next) => {
     next(error);
   }
 };
+
+// DELETE OWN REVIEW (USER, WITHIN 4 DAYS)
+export const deleteMyReview = async (req, res, next) => {
+  try {
+    const review = await Review.findById(req.params.id);
+    if (!review) {
+      return res.status(404).json({
+        success: false,
+        message: 'Review not found'
+      });
+    }
+
+    if (review.userId.toString() !== req.user._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: 'You can delete only your own review'
+      });
+    }
+
+    const reviewCreatedAt = review.createdAt ? new Date(review.createdAt).getTime() : 0;
+    const FOUR_DAYS_MS = 4 * 24 * 60 * 60 * 1000;
+    const canDeleteByUser = Date.now() - reviewCreatedAt <= FOUR_DAYS_MS;
+
+    if (!canDeleteByUser) {
+      return res.status(403).json({
+        success: false,
+        message: 'You can delete your review only within 4 days. Please contact admin.'
+      });
+    }
+
+    await review.deleteOne();
+
+    res.status(200).json({
+      success: true,
+      message: 'Review deleted successfully'
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// UPDATE OWN REVIEW (USER, WITHIN 4 DAYS)
+export const updateMyReview = async (req, res, next) => {
+  try {
+    const review = await Review.findById(req.params.id);
+    if (!review) {
+      return res.status(404).json({
+        success: false,
+        message: 'Review not found'
+      });
+    }
+
+    if (review.userId.toString() !== req.user._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: 'You can edit only your own review'
+      });
+    }
+
+    const reviewCreatedAt = review.createdAt ? new Date(review.createdAt).getTime() : 0;
+    const FOUR_DAYS_MS = 4 * 24 * 60 * 60 * 1000;
+    const canEditByUser = Date.now() - reviewCreatedAt <= FOUR_DAYS_MS;
+
+    if (!canEditByUser) {
+      return res.status(403).json({
+        success: false,
+        message: 'You can edit your review only within 4 days. Please contact admin.'
+      });
+    }
+
+    const {
+      rating,
+      comment,
+      valueForMoney,
+      durability,
+      deliverySpeed,
+      pros,
+      cons,
+    } = req.body;
+
+    if (rating != null) review.rating = Number(rating);
+    if (comment != null) review.comment = String(comment).trim();
+    if (valueForMoney != null) review.valueForMoney = Number(valueForMoney) > 0 ? Number(valueForMoney) : undefined;
+    if (durability != null) review.durability = Number(durability) > 0 ? Number(durability) : undefined;
+    if (deliverySpeed != null) review.deliverySpeed = Number(deliverySpeed) > 0 ? Number(deliverySpeed) : undefined;
+    if (pros != null) review.pros = typeof pros === 'string' && pros.trim() ? pros.trim() : undefined;
+    if (cons != null) review.cons = typeof cons === 'string' && cons.trim() ? cons.trim() : undefined;
+
+    await review.save();
+
+    res.status(200).json({
+      success: true,
+      data: review,
+      message: 'Review updated successfully'
+    });
+  } catch (error) {
+    next(error);
+  }
+};

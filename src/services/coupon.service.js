@@ -39,6 +39,10 @@ export const validateCouponDocument = (doc, orderTotal) => {
 		return { ok: false, message: 'This coupon is not active' };
 	}
 	const now = new Date();
+	const creation = doc.creation_date instanceof Date ? doc.creation_date : new Date(doc.creation_date);
+	if (!Number.isNaN(creation.getTime()) && creation > now) {
+		return { ok: false, message: 'This coupon is not active yet' };
+	}
 	const expiry = doc.expiry_date instanceof Date ? doc.expiry_date : new Date(doc.expiry_date);
 	if (Number.isNaN(expiry.getTime()) || expiry < now) {
 		return { ok: false, message: 'This coupon has expired' };

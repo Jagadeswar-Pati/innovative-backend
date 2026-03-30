@@ -1,11 +1,23 @@
 import express from 'express';
-import { getAllReviews, updateReviewStatus, deleteReview, createReview, getPublicReviews, getReviewMode, updateReviewMode } from '../controllers/review.controller.js';
+import {
+  getAllReviews,
+  updateReviewStatus,
+  deleteReview,
+  createReview,
+  getPublicReviews,
+  getReviewMode,
+  updateReviewMode,
+  deleteMyReview,
+  updateMyReview,
+} from '../controllers/review.controller.js';
 import adminAuth from '../middleware/adminAuth.middleware.js';
 import userAuth from '../middleware/userAuth.middleware.js';
 
 const router = express.Router();
 
 router.post('/', userAuth, createReview);
+router.delete('/my/:id', userAuth, deleteMyReview);
+router.patch('/my/:id', userAuth, updateMyReview);
 router.get('/public', getPublicReviews);
 router.get('/mode', getReviewMode);
 

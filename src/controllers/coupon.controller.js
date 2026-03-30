@@ -10,6 +10,7 @@ export const createCoupon = async (req, res, next) => {
 			coupon_code,
 			discount_type,
 			discount_value,
+			creation_date,
 			expiry_date,
 			usage_limit,
 			min_order_value,
@@ -30,9 +31,16 @@ export const createCoupon = async (req, res, next) => {
 		if (discount_type === 'percentage' && val > 100) {
 			return res.status(400).json({ success: false, message: 'Percentage discount cannot exceed 100' });
 		}
+		const creation = creation_date ? new Date(creation_date) : new Date();
+		if (Number.isNaN(creation.getTime())) {
+			return res.status(400).json({ success: false, message: 'Valid creation_date is required' });
+		}
 		const exp = expiry_date ? new Date(expiry_date) : null;
 		if (!exp || Number.isNaN(exp.getTime())) {
 			return res.status(400).json({ success: false, message: 'Valid expiry_date is required' });
+		}
+		if (exp < creation) {
+			return res.status(400).json({ success: false, message: 'expiry_date must be after creation_date' });
 		}
 		const limit = Number(usage_limit);
 		if (!Number.isFinite(limit) || limit < 1) {
@@ -52,6 +60,7 @@ export const createCoupon = async (req, res, next) => {
 			coupon_code: code,
 			discount_type,
 			discount_value: roundMoney(val),
+			creation_date: creation,
 			expiry_date: exp,
 			usage_limit: Math.floor(limit),
 			used_count: 0,
@@ -110,6 +119,13 @@ export const updateCoupon = async (req, res, next) => {
 			}
 			updates.expiry_date = exp;
 		}
+		if (req.body.creation_date != null) {
+			const creation = new Date(req.body.creation_date);
+			if (Number.isNaN(creation.getTime())) {
+				return res.status(400).json({ success: false, message: 'Invalid creation_date' });
+			}
+			updates.creation_date = creation;
+		}
 		if (req.body.usage_limit != null) {
 			const limit = Number(req.body.usage_limit);
 			if (!Number.isFinite(limit) || limit < 1) {
@@ -138,6 +154,16 @@ export const updateCoupon = async (req, res, next) => {
 		}
 		if (req.body.active_status !== undefined) {
 			updates.active_status = req.body.active_status === true || req.body.active_status === 'true';
+		}
+
+		if (updates.creation_date || updates.expiry_date) {
+			const existingDates = await Coupon.findById(id).select('creation_date expiry_date').lean();
+			if (!existingDates) return res.status(404).json({ success: false, message: 'Coupon not found' });
+			const effectiveCreation = updates.creation_date || existingDates.creation_date;
+			const effectiveExpiry = updates.expiry_date || existingDates.expiry_date;
+			if (new Date(effectiveExpiry).getTime() < new Date(effectiveCreation).getTime()) {
+				return res.status(400).json({ success: false, message: 'expiry_date must be after creation_date' });
+			}
 		}
 
 		const doc = await Coupon.findByIdAndUpdate(id, { $set: updates }, { new: true, runValidators: true });
