@@ -25,7 +25,6 @@ const couponSchema = new mongoose.Schema(
 	{ timestamps: true }
 );
 
-couponSchema.index({ coupon_code: 1 });
 couponSchema.index({ active_status: 1, expiry_date: 1 });
 
 const Coupon = mongoose.model('Coupon', couponSchema);
