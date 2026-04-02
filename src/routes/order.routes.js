@@ -12,6 +12,7 @@ import {
   generateInvoiceForOrder,
   streamOrderInvoice,
   deleteOrder,
+  trackOrderByEmail,
 } from '../controllers/order.controller.js';
 
 import userAuth from '../middleware/userAuth.middleware.js';
@@ -22,6 +23,7 @@ const router = express.Router();
 
 // User-wise order APIs (must come before :id)
 router.post('/create', userAuth, createOrder);
+router.post('/track', trackOrderByEmail);
 router.get('/my-orders', userAuth, getMyOrders);
 router.post('/:id/generate-invoice', userAuth, generateInvoiceForOrder);
 router.get('/:id/invoice', adminOrUserAuth, streamOrderInvoice);

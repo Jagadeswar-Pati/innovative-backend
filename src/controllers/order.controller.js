@@ -1,4 +1,5 @@
 // Create order (user)
+import mongoose from 'mongoose';
 import Product from '../models/Product.model.js';
 import User from '../models/User.model.js';
 import Order from '../models/Order.model.js';
@@ -78,6 +79,38 @@ export const getMyOrders = async (req, res, next) => {
 	try {
 		const orders = await Order.find({ customerId: req.user._id }).sort({ createdAt: -1 });
 		res.json({ success: true, data: orders });
+	} catch (err) {
+		next(err);
+	}
+};
+
+/**
+ * Public order tracking: match order ID + email of the account that placed the order (no login).
+ * Same 404 message whether order missing or email wrong (avoid leaking order existence).
+ */
+export const trackOrderByEmail = async (req, res, next) => {
+	try {
+		const orderId = typeof req.body?.orderId === 'string' ? req.body.orderId.trim() : '';
+		const emailRaw = typeof req.body?.email === 'string' ? req.body.email.trim() : '';
+		if (!orderId || !emailRaw) {
+			return res.status(400).json({ success: false, message: 'Order ID and email are required' });
+		}
+		if (!mongoose.Types.ObjectId.isValid(orderId)) {
+			return res.status(404).json({ success: false, message: 'Order not found' });
+		}
+		const order = await Order.findById(orderId);
+		if (!order) {
+			return res.status(404).json({ success: false, message: 'Order not found' });
+		}
+		const customer = await getRegisteredCustomerForOrder(order);
+		if (!customer) {
+			return res.status(404).json({ success: false, message: 'Order not found' });
+		}
+		const normalized = emailRaw.toLowerCase();
+		if (customer.email !== normalized) {
+			return res.status(404).json({ success: false, message: 'Order not found' });
+		}
+		res.json({ success: true, data: order });
 	} catch (err) {
 		next(err);
 	}
